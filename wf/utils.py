@@ -153,7 +153,7 @@ def create_grid_layout_deprecate(figures: List[go.Figure],
 
 def create_grid_layout(figures: List[go.Figure], 
                       cols: int = 2, 
-                      title: str = "Analysis Grid") -> str:
+                      title: str = None, title_level=3) -> str:
     """Create a responsive grid layout HTML string for multiple plotly figures
     
     Args:
@@ -170,10 +170,12 @@ def create_grid_layout(figures: List[go.Figure],
     # Create plot divs
     plot_divs = [f'<div class="plot-container">{plot}</div>' for plot in plot_htmls]
     
+    grid_title = f'<h{title_level}>{title}</h{title_level}>' if title else ''
+
     # Combine all plots into grid container
     return f"""
     <div class="grid-container">
-        <h2>{title}</h2>
+        {grid_title}
         <div class="plot-grid">
             {"".join(plot_divs)}
         </div>

@@ -1,9 +1,11 @@
 from dataclasses import dataclass
-from typing import List, Union
+from typing import List, Optional, Union
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+
+from wf.utils import create_grid_layout
 
 
 @dataclass
@@ -56,44 +58,6 @@ def _get_bin_mean(signal, ret, bins, statistic='mean', error_bars=True, confiden
         stats_df['ci_upper'] = stats_df[statistic] + stats_df['error_margin']
     
     return stats_df
-
-
-# def bin_mean_stats(signal, ret, bins=None, statistic='mean', m=None):
-#     bins_list = parse_bin(signal, bins, m=m, )
-#     result = []
-#     for info in bins_list:
-#         result.append((
-#             info.label,
-#             _get_bin_mean(signal, ret, info.bins, statistic=statistic)
-#         ))
-#     return result
-
-
-# def quantile_mean_stats(signal, ret, quantile=None, statistic='mean', m=None):
-#     # ist = parse_bin(signal, bins, m=m, )
-#     result = []
-#     for q in quantile:
-#         quantiles = pd.qcut(signal, q=q)
-    
-#         # Group and compute statistics
-#         grouped = ret.groupby(quantiles)
-#         stats = pd.DataFrame({
-#                 'count': grouped.count(),
-#                 statistic: grouped.agg(statistic)
-#         })
-#         result.append((q, stats))
-#     return result
-
-
-# def bin_stats(signal, ret, bins=None, quantile=None, method='mean', m=None):
-
-#     return bin_mean_stats(signal, ret, bins, method, m) + \
-#         quantile_mean_stats(signal, ret, quantile, method, m)
-
-
-import numpy as np
-import pandas as pd
-import plotly.graph_objects as go
 
 
 def quantile_mean_stats(signal, ret, quantile=None, method='mean'):
@@ -208,7 +172,7 @@ class BM:
             confidence_level=self.confidence_level
         )
     
-    def plot(self, signal: pd.Series, ret: pd.Series) -> go.Figure:
+    def plot_side_by_side(self, signal: pd.Series, ret: pd.Series) -> go.Figure:
         """Generate a side-by-side plot of counts and means/medians for binned analysis"""
         stats_df = self.gen_stats(signal, ret)
         
@@ -445,3 +409,141 @@ class BM:
             
         return figures
     
+
+class BMReport:
+
+    @staticmethod
+    def gen_report_single(signal: pd.Series, ret: pd.Series, bins_list: List[int],
+                   method: str = 'mean', bin_clip: float = None,
+                   confidence_level: float = 0.95, error_bars: bool = True,
+                   plot_type: str = 'side-by-side', plot_col_wrap: int = 2) -> str:
+        # Handle single bin number or list of bin numbers
+        figures = []
+        for bins in bins_list:
+            # Assert bins is a positive integer
+            assert isinstance(bins, int) and bins > 0, f"bins must be a positive integer, got {bins}"
+            
+            # Create BM analyzer for this bin size
+            bm = BM(
+                bins=bins,
+                method=method,
+                bin_clip=bin_clip,
+                confidence_level=confidence_level,
+                error_bars=error_bars
+            )
+            
+            # Generate figure based on plot type
+            
+            fig = bm.plot_overlay(signal, ret) if plot_type == 'overlay' else bm.plot_side_by_side(signal, ret)
+            fig.update_layout(title=f"{bins} Bins Analysis")
+            figures.append(fig)
+            
+            # Create subsection for this bin size
+        subsection = f"""
+            <div style="margin-bottom: 20px;">
+                <h4>{bins} Bins Analysis</h4>
+                {create_grid_layout(figures, cols=plot_col_wrap)}
+            </div>
+        """
+        
+        # Combine all subsections into the BM section
+        return subsection
+    
+    @staticmethod
+    def create_multi_returns_section(
+        signal: pd.Series,
+        ret_df: pd.DataFrame,
+        bins: Union[int, List[int]] = 20,
+        method: str = "mean",
+        bin_clip: Optional[float] = None,
+        confidence_level: float = 0.95,
+        error_bars: bool = True,
+        plot_type: str = "side-by-side",
+        plot_col_wrap: int = 2
+    ) -> str:
+        """Create the binned means analysis section for single signal and multiple returns"""
+        subsections = []
+        
+        # Handle single bin number or list of bin numbers
+        bins_list = [bins] if isinstance(bins, (int, np.ndarray)) else bins
+        
+        for bin_count in bins_list:
+            # Create BM analyzer for this bin size
+            bm = BM(
+                bins=bin_count,
+                method=method,
+                bin_clip=bin_clip,
+                confidence_level=confidence_level,
+                error_bars=error_bars
+            )
+            
+            # Get figures for this bin size
+            figures = bm.plot_one_signal_all_returns(
+                signal=signal,
+                returns=ret_df,
+            )
+            
+            subsection = f"""
+                <div style="margin-bottom: 20px;">
+                    {create_grid_layout(figures, cols=plot_col_wrap, title=f"{bin_count} Bins", title_level=4)}
+                </div>
+            """
+            subsections.append(subsection)
+        
+        return f"""
+            <div style="margin-bottom: 30px;">
+                <h3>Bin Mean Analysis</h3>
+                {"".join(subsections)}
+            </div>
+        """
+
+    @staticmethod
+    def create_multi_signals_section(
+        signal_df: pd.DataFrame,
+        ret: pd.Series,
+        bins: Union[int, List[int]] = 20,
+        method: str = "mean",
+        bin_clip: Optional[float] = None,
+        confidence_level: float = 0.95,
+        error_bars: bool = True,
+        plot_col_wrap: int = 2
+    ) -> str:
+        """Create the binned means analysis section for multiple signals and single return
+        each bins values would be itself a subsection. Multiple signals should share a subsection
+        (in multi-figure)
+        
+        """
+        subsections = []
+        
+        # Handle single bin number or list of bin numbers
+        bins_list = [bins] if isinstance(bins, (int, np.ndarray)) else bins
+        
+        for bin_count in bins_list:
+            # Create BM analyzer for this bin size
+            bm = BM(
+                bins=bin_count,
+                method=method,
+                bin_clip=bin_clip,
+                confidence_level=confidence_level,
+                error_bars=error_bars
+            )
+            
+            # Get figures for this bin size
+            figures = bm.plot_all_signals_one_return(
+                signal_df=signal_df,
+                ret=ret,
+            )
+            
+            subsection = f"""
+                <div style="margin-bottom: 20px;">
+                    {create_grid_layout(figures, cols=plot_col_wrap, title=f"{bin_count} Bins", title_level=4)}
+                </div>
+            """
+            subsections.append(subsection)
+        
+        return f"""
+            <div style="margin-bottom: 30px;">
+                <h3>Bin Mean Analysis</h3>
+                {"".join(subsections)}
+            </div>
+        """ 
